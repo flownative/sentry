@@ -23,6 +23,10 @@ use Sentry\Severity;
 
 final class SentryCommandController extends CommandController
 {
+    const TEST_MODE_MESSAGE = 'message';
+    const TEST_MODE_THROW = 'throw';
+    const TEST_MODE_ERROR = 'error';
+
     /**
      * @Flow\Inject
      * @var SentryClient
@@ -39,13 +43,12 @@ final class SentryCommandController extends CommandController
      *
      * @throws SentryClientTestException
      */
-    public function testCommand(): void
+    public function testCommand(string $mode = self::TEST_MODE_THROW): void
     {
         $this->output->outputLine('<b>Testing Sentry setup …</b>');
         $this->output->outputLine('Using the following configuration:');
 
         $options = $this->sentryClient->getOptions();
-
         $this->output->outputTable([
             ['DSN', $options->getDsn()],
             ['Environment', $options->getEnvironment()],
@@ -57,7 +60,24 @@ final class SentryCommandController extends CommandController
             'Value'
         ]);
 
-        $eventId = $this->sentryClient->captureMessage(
+        switch ($mode) {
+            case self::TEST_MODE_MESSAGE:
+                $this->captureMessage();
+                break;
+            case self::TEST_MODE_THROW:
+                $this->throwException();
+                break;
+            case self::TEST_MODE_ERROR:
+                $this->triggerError();
+                break;
+            default:
+                $this->output->outputLine('<error>Unknown mode given</error>');
+        }
+    }
+
+    private function captureMessage(): void
+    {
+        $captureResult = $this->sentryClient->captureMessage(
             'Flownative Sentry Plugin Test',
             Severity::debug(),
             [
@@ -65,11 +85,34 @@ final class SentryCommandController extends CommandController
             ]
         );
 
-        $this->outputLine('<success>An informational message was sent to Sentry</success> Event ID: #%s', [$eventId]);
+        $this->outputLine();
+        if ($captureResult->suceess) {
+            $this->outputLine('<success>An informational message was sent to Sentry</success> Event ID: #%s', [$captureResult->eventId]);
+        } else {
+            $this->outputLine('<error>Sending an informational message to Sentry failed</error>: %s', [$captureResult->message]);
+        }
+        $this->outputLine();
+    }
+
+    private function throwException(): void
+    {
         $this->outputLine();
         $this->outputLine('This command will now throw an exception for testing purposes.');
         $this->outputLine();
-
         (new ThrowingClass())->throwException(new StringableTestArgument((string)M_PI));
+    }
+
+    private function triggerError(): void
+    {
+        $this->outputLine();
+        $this->outputLine('This command will now cause a return type error for testing purposes.');
+        $this->outputLine();
+
+        $function = static function (): int {
+            /** @noinspection PhpStrictTypeCheckingInspection */
+            return 'wrong type';
+        };
+        /** @noinspection PhpExpressionResultUnusedInspection */
+        $function();
     }
 }
